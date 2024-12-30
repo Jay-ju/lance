@@ -138,9 +138,10 @@ class _BaseLanceDatasink(ray.data.Datasink):
                 DeprecationWarning,
             )
             return "Empty list"
-        if (not isinstance(write_results, List[List[Tuple[str, str]]])) and hasattr(
-            write_results, "write_returns"
-        ):
+        if (
+            not isinstance(write_results, list)
+            or not isinstance(write_results[0], list)
+        ) and hasattr(write_results, "write_returns"):
             warnings.warn(
                 "write_results type is wrong. please check version",
                 DeprecationWarning,
