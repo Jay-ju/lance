@@ -132,14 +132,24 @@ class _BaseLanceDatasink(ray.data.Datasink):
     ):
         import warnings
 
-        warnings.warn(
-            "write_result_blocks is empty.",
-            DeprecationWarning,
-        )
-        return "Empty list"
+        if not write_results:
+            warnings.warn(
+                "write_results is empty.",
+                DeprecationWarning,
+            )
+            return "Empty list"
+        if (not isinstance(write_results, List[List[Tuple[str, str]]])) and hasattr(
+            write_results, "write_returns"
+        ):
+            warnings.warn(
+                "write_results type is wrong. please check version",
+                DeprecationWarning,
+            )
+            return "Empty list"
 
         if hasattr(write_results, "write_returns"):
             write_results = write_results.write_returns
+
         fragments = []
         schema = None
         for batch in write_results:
