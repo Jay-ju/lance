@@ -157,9 +157,6 @@ class _BaseLanceDatasink(ray.data.Datasink):
             )
             return "Empty list"
 
-        if hasattr(write_results, "write_returns"):
-            write_results = write_results.write_returns
-
         fragments = []
         schema = None
         for batch in write_results:
