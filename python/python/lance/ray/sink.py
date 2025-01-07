@@ -137,16 +137,20 @@ class _BaseLanceDatasink(ray.data.Datasink):
                 "write_results is empty.",
                 DeprecationWarning,
             )
-            return "Empty list"
+            return
         if (
             not isinstance(write_results, list)
             or not isinstance(write_results[0], list)
         ) and not hasattr(write_results, "write_returns"):
             warnings.warn(
-                "write_results type is wrong. please check version",
+                "write_results type is wrong. please check version, "
+                "upgrade or downgrade your ray version. ray versions >= 2.38 "
+                "and < 2.41 are unable to write Lance datasets, check ray PR "
+                "https://github.com/ray-project/ray/pull/49251 in your "
+                "ray version. ",
                 DeprecationWarning,
             )
-            return "Empty list"
+            return
         if hasattr(write_results, "write_returns"):
             write_results = write_results.write_returns
 
@@ -155,7 +159,7 @@ class _BaseLanceDatasink(ray.data.Datasink):
                 "write results is empty. maybe contain none object",
                 DeprecationWarning,
             )
-            return "Empty list"
+            return
 
         fragments = []
         schema = None
