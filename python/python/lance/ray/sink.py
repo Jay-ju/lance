@@ -156,7 +156,8 @@ class _BaseLanceDatasink(ray.data.Datasink):
 
         if len(write_results) == 0:
             warnings.warn(
-                "write results is empty. maybe contain none object",
+                "write results is empty. please check ray version "
+                "or internal error",
                 DeprecationWarning,
             )
             return
