@@ -177,9 +177,9 @@ def generate_label(batch: pa.RecordBatch) -> pa.RecordBatch:
 
 
 @pytest.mark.filterwarnings("ignore::DeprecationWarning")
-@pytest.mark.skip(
-    reason="This test local can run, but not in CI." "it's blocked by ray env"
-)
+# @pytest.mark.skip(
+#     reason="This test local can run, but not in CI." "it's blocked by ray env"
+# )
 def test_lance_parallel_merge_columns(tmp_path: Path):
     schema = pa.schema(
         [
