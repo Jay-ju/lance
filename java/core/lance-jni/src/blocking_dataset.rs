@@ -223,6 +223,24 @@ impl BlockingDataset {
         Ok(indexes)
     }
 
+    pub fn update_config(
+            &mut self,
+            upsert_values: HashMap<String, String>,
+        ) -> Result<()> {
+            RT.block_on(self.inner.update_config(upsert_values))?;
+            Ok(())
+        }
+
+    pub fn delete_config_keys(&mut self, keys: Vec<String>) -> Result<()> {
+            RT.block_on(self.inner.delete_config_keys(keys))?;
+            Ok(())
+        }
+
+    pub fn config(&self) -> Result<HashMap<String, String>> {
+            let config = RT.block_on(self.inner.config())?;
+            Ok(config)
+        }
+
     pub fn close(&self) {}
 }
 
@@ -1335,6 +1353,85 @@ fn inner_add_columns_by_schema(
 
     Ok(())
 }
+
+
+#[no_mangle]
+pub extern "system" fn Java_com_lancedb_lance_Dataset_nativeUpdateConfig(
+    mut env: JNIEnv,
+    java_dataset: JObject,
+    upsert_values_obj: JObject, // Map<String, String>
+) {
+    ok_or_throw_without_return!(
+        env,
+        inner_update_config(&mut env, java_dataset, upsert_values_obj)
+    );
+}
+
+fn inner_update_config(
+    env: &mut JNIEnv,
+    java_dataset: JObject,
+    upsert_values_obj: JObject, // Map<String, String>
+) -> Result<()> {
+    let upsert_values = extract_storage_options(env, &upsert_values_obj)?;
+    let mut dataset_guard =
+        unsafe { env.get_rust_field::<_, _, BlockingDataset>(java_dataset, NATIVE_DATASET) }?;
+    dataset_guard.update_config(upsert_values)?;
+    Ok(())
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_lancedb_lance_Dataset_nativeDeleteConfigKeys(
+    mut env: JNIEnv,
+    java_dataset: JObject,
+    keys_obj: JObject, // List<String>
+) {
+    ok_or_throw_without_return!(
+        env,
+        inner_delete_config_keys(&mut env, java_dataset, keys_obj)
+    );
+}
+
+fn inner_delete_config_keys(
+    env: &mut JNIEnv,
+    java_dataset: JObject,
+    keys_obj: JObject, // List<String>
+) -> Result<()> {
+    let keys = env.get_strings(&keys_obj)?;
+    let mut dataset_guard =
+        unsafe { env.get_rust_field::<_, _, BlockingDataset>(java_dataset, NATIVE_DATASET) }?;
+    dataset_guard.delete_config_keys(keys)?;
+    Ok(())
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_lancedb_lance_Dataset_nativeConfig<'local>(
+    mut env: JNIEnv<'local>,
+    java_dataset: JObject<'local>,
+) -> JObject<'local> {
+    ok_or_throw!(env, inner_config(&mut env, java_dataset))
+}
+
+fn inner_config<'local>(
+    env: &mut JNIEnv<'local>,
+    java_dataset: JObject<'local>,
+) -> Result<JObject<'local>> {
+    let dataset_guard = unsafe {
+        env.get_rust_field::<_, _, BlockingDataset>(java_dataset, NATIVE_DATASET)?
+    };
+    let config = dataset_guard.config()?;
+
+    let jmap = env.new_object("java/util/TreeMap", "()V", &[])?;
+    let map = JMap::from_env(env, &jmap)?;
+
+    for (key, value) in config {
+        let jkey = env.new_string(key)?;
+        let jval = env.new_string(value)?;
+        map.put(env, &jkey, &jval).expect("Failed to put key-value pair into Java map");
+    }
+
+    Ok(jmap)
+}
+
 
 //////////////////////////////
 // Tag operation Methods    //

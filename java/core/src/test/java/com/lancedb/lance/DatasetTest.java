@@ -761,6 +761,25 @@ public class DatasetTest {
         assertEquals(1, dataset2.countRows("id = 2"));
         assertEquals(0, dataset2.countRows("id = 1"));
       }
+
+    @Test
+    public void testEnableAutoCleanup() {
+        try (RootAllocator allocator = new RootAllocator(Long.MAX_VALUE)) {
+          TestUtils.SimpleTestDataset dataset =
+              new TestUtils.SimpleTestDataset(allocator, datasetPath);
+          dataset.write(1, 5);
+          Map<String, String> expectedConfig = new HashMap<>();
+          expectedConfig.put("lance.auto_cleanup.interval", "10s");
+          expectedConfig.put("lance.auto_cleanup.older_than", "86400s");
+          dataset.updateConfig(expectedConfig);
+
+          assert dataset.getConfig().equals(expectedConfig);
+
+          Map<String, String> expectedConfig = HashMap.of("lance.auto_cleanup.interval", "10s");
+          dataset.deleteConfig("lance.auto_cleanup.older_than");
+          assert dataset.getConfig().equals(expectedConfig);
+        }
+
     }
-  }
+
 }

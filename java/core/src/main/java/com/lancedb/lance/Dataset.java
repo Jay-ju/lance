@@ -693,6 +693,48 @@ public class Dataset implements Closeable {
   }
 
   /**
+   * Update the dataset configuration.
+   *
+   * @param handle The native handle of the dataset.
+   * @param config The key-value pairs to update the configuration.
+   */
+  private native void nativeUpdateConfig(long handle, Map<String, String> config);
+
+  public void updateConfig(Map<String, String> config) {
+    try (LockManager.WriteLock writeLock = lockManager.acquireWriteLock()) {
+      Preconditions.checkArgument(nativeDatasetHandle!= 0, "Dataset is closed");
+      nativeUpdateConfig(nativeDatasetHandle, config);
+    }
+  }
+
+  /**
+   * Delete the dataset configuration.
+   *
+   * @param handle The native handle of the dataset.
+   * @param keys The keys to delete from the configuration.
+   */
+  private native void nativeDeleteConfigKeys(long handle, List<String> keys);
+
+  public void deleteConfigKeys(List<String> keys) {
+    try (LockManager.WriteLock writeLock = lockManager.acquireWriteLock()) {
+      Preconditions.checkArgument(nativeDatasetHandle!= 0, "Dataset is closed");
+      nativeDeleteConfigKeys(nativeDatasetHandle, keys);
+    }
+  }
+
+  /**
+   * Get the configuration of the dataset.
+   *
+   * @return A map containing the configuration key-value pairs of the dataset.
+   */
+  public Map<String, String> config() {
+    try (LockManager.ReadLock readLock = lockManager.acquireReadLock()) {
+      Preconditions.checkArgument(nativeDatasetHandle != 0, "Dataset is closed");
+      return nativeConfig(nativeDatasetHandle);
+    }
+  }
+
+  /**
    * Native method to release the Lance dataset resources associated with the given handle.
    *
    * @param handle The native handle to the dataset resource.
