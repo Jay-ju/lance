@@ -81,6 +81,9 @@ pub use lance_datafusion::exec::{ExecutionStatsCallback, ExecutionSummaryCounts}
 #[cfg(feature = "substrait")]
 use lance_datafusion::substrait::parse_substrait;
 
+use futures::stream::{AbortHandle};
+
+
 pub(crate) const BATCH_SIZE_FALLBACK: usize = 8192;
 // For backwards compatibility / historical reasons we re-calculate the default batch size
 // on each call
@@ -1120,14 +1123,15 @@ impl Scanner {
         async move {
             let plan = self.create_plan().await?;
 
-            Ok(DatasetRecordBatchStream::new(execute_plan(
-                plan,
-                LanceExecutionOptions {
-                    batch_size: self.batch_size,
-                    execution_stats_callback: self.scan_stats_callback.clone(),
-                    ..Default::default()
-                },
-            )?))
+            let (abort_handle, _) = AbortHandle::new_pair();
+            let options = LanceExecutionOptions {
+                batch_size: self.batch_size,
+                execution_stats_callback: self.scan_stats_callback.clone(),
+                ..Default::default()
+            };
+            
+            let exec_node = execute_plan(plan, options)?;
+            Ok(DatasetRecordBatchStream::new(exec_node, abort_handle))
         }
         .boxed()
     }
@@ -2924,17 +2928,54 @@ impl Scanner {
 /// [`DatasetRecordBatchStream`] wraps the dataset into a [`RecordBatchStream`] for
 /// consumption by the user.
 ///
-#[pin_project::pin_project]
+#[pin_project::pin_project(PinnedDrop)]
 pub struct DatasetRecordBatchStream {
     #[pin]
     exec_node: SendableRecordBatchStream,
     span: Span,
+    abort_handle: Option<AbortHandle>, 
 }
 
+#[pin_project::pinned_drop]
+impl PinnedDrop for DatasetRecordBatchStream {
+    fn drop(self: Pin<&mut Self>) {
+        let this = self.project();
+        if let Some(handle) = this.abort_handle.as_ref() {
+            handle.abort();
+        }
+    }
+}
+
+
 impl DatasetRecordBatchStream {
-    pub fn new(exec_node: SendableRecordBatchStream) -> Self {
+    pub fn new(exec_node: SendableRecordBatchStream, abort_handle: AbortHandle) -> Self {
         let span = info_span!("DatasetRecordBatchStream");
-        Self { exec_node, span }
+        Self { 
+            exec_node,
+            span,
+            abort_handle: Some(abort_handle), 
+        }
+    }
+
+    /// Consumes the stream, returning the inner stream and preventing the abort
+    /// logic from running.
+    fn into_inner(self) -> SendableRecordBatchStream {
+        use std::mem::ManuallyDrop;
+        use std::ptr;
+
+        // Wrap in ManuallyDrop to prevent Drop from being called automatically.
+        let this = ManuallyDrop::new(self);
+        // We can now safely move the fields out of `this`, because we are
+        // consuming it and its destructor will not be run. We are responsible
+        // for dropping the fields we don't return.
+        unsafe {
+            let exec_node = ptr::read(&this.exec_node);
+            let span = ptr::read(&this.span);
+            let abort_handle = ptr::read(&this.abort_handle);
+            drop(span);
+            drop(abort_handle);
+            exec_node
+        }
     }
 }
 
@@ -2961,7 +3002,7 @@ impl Stream for DatasetRecordBatchStream {
 
 impl From<DatasetRecordBatchStream> for SendableRecordBatchStream {
     fn from(stream: DatasetRecordBatchStream) -> Self {
-        stream.exec_node
+        stream.into_inner()
     }
 }
 

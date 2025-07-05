@@ -3648,6 +3648,7 @@ dependencies = [
  "tempfile",
  "tfrecord",
  "tokio",
+ "tokio-util",
  "tracing",
  "url",
  "uuid",

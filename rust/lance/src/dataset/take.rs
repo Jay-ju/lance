@@ -435,10 +435,13 @@ pub fn take_scan(
         })
         .buffered(batch_readahead);
 
+    let (abort_handle, _) = futures::future::AbortHandle::new_pair();
     DatasetRecordBatchStream::new(Box::pin(RecordBatchStreamAdapter::new(
         arrow_schema,
         batch_stream,
-    )))
+    )),
+    abort_handle, 
+)
 }
 
 struct RowAddressStats {

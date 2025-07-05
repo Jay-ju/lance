@@ -72,6 +72,8 @@ use lance_io::object_store::ObjectStoreParams;
 use lance_linalg::distance::MetricType;
 use lance_table::format::Fragment;
 use lance_table::io::commit::CommitHandler;
+use futures::future::AbortHandle;
+
 
 use crate::error::PythonErrorExt;
 use crate::file::object_store_from_uri_or_path;
@@ -1778,9 +1780,12 @@ impl Dataset {
             )?
             .map_err(|err| PyValueError::new_err(err.to_string()))?;
 
+        let (abort_handle, _abort_registration) = AbortHandle::new_pair();
         let reader = Box::new(LanceReader::from_stream(DatasetRecordBatchStream::new(
             stream,
+            abort_handle,
         )));
+
         Ok(PyArrowType(reader))
     }
 
