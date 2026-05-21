@@ -399,7 +399,7 @@ mod tests {
     use crate::scalar::{
         LabelListQuery, SargableQuery, ScalarIndex, SearchResult,
         bitmap::BitmapIndex,
-        btree::{DEFAULT_BTREE_BATCH_SIZE, train_btree_index},
+        btree::{DEFAULT_BTREE_BATCH_SIZE, DistributedMode, train_btree_index},
     };
 
     use super::*;
@@ -441,6 +441,7 @@ mod tests {
         let params = BTreeParameters {
             zone_size: Some(batch_size),
             range_id: None,
+            num_partitions: None,
         };
         let params = serde_json::to_string(&params).unwrap();
         let btree_plugin = BTreeIndexPlugin;
@@ -977,8 +978,7 @@ mod tests {
             data,
             index_store.as_ref(),
             DEFAULT_BTREE_BATCH_SIZE,
-            None,
-            None,
+            DistributedMode::Single,
         )
         .await
         .unwrap();

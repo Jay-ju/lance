@@ -30,6 +30,7 @@ use jni::sys::{jbyteArray, jlong};
 use jni::{JNIEnv, objects::JObject};
 use lance::dataset::builder::DatasetBuilder;
 use lance::dataset::cleanup::{CleanupPolicy, RemovalStats};
+use lance::dataset::index::LanceIndexStoreExt;
 use lance::dataset::optimize::{CompactionOptions as RustCompactionOptions, compact_files};
 use lance::dataset::refs::{Ref, TagContents};
 use lance::dataset::statistics::{DataStatistics, DatasetStatisticsExt};
@@ -1111,11 +1112,22 @@ fn inner_merge_index_metadata(
         unsafe { env.get_rust_field::<_, _, BlockingDataset>(java_dataset, NATIVE_DATASET) }?;
 
     RT.block_on(async {
-        dataset_guard
+        let mr = dataset_guard
             .inner
             .merge_index_metadata(&index_uuid, index_type, batch_readhead, noop_progress())
-            .await
+            .await?;
+
+        if let Some(ref mr) = mr {
+            let store = lance_index::scalar::lance_format::LanceIndexStore::from_dataset_for_new(
+                &dataset_guard.inner,
+                &index_uuid,
+            )?;
+            lance_index::scalar::btree::cleanup_shard_files(&store, mr).await;
+        }
+
+        Ok::<(), crate::error::Error>(())
     })?;
+
     Ok(())
 }
 

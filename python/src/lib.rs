@@ -43,7 +43,9 @@ use dataset::io_stats::IoStats;
 use dataset::optimize::{
     PyCompaction, PyCompactionMetrics, PyCompactionPlan, PyCompactionTask, PyRewriteResult,
 };
-use dataset::{DatasetBasePath, MergeInsertBuilder, PyFullTextQuery, PySearchFilter};
+use dataset::{
+    BTreeMergeResult, DatasetBasePath, MergeInsertBuilder, PyFullTextQuery, PySearchFilter,
+};
 use env_logger::{Builder, Env};
 use file::{
     LanceBufferDescriptor, LanceColumnMetadata, LanceFileMetadata, LanceFileReader,
@@ -249,6 +251,7 @@ fn lance(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Scanner>()?;
     m.add_class::<Dataset>()?;
     m.add_class::<DatasetBasePath>()?;
+    m.add_class::<BTreeMergeResult>()?;
     m.add_class::<FileFragment>()?;
     m.add_class::<PyDeletionFile>()?;
     m.add_class::<PyRowIdMeta>()?;
