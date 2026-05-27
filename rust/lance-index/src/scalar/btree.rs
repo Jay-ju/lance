@@ -1459,6 +1459,7 @@ impl BTreeIndex {
 
             let range_map = part_sizes_vec
                 .into_iter()
+                .filter(|(_, size)| *size > 0)
                 .map(|(id, size)| {
                     let range = offset..=(offset + size - 1);
                     let file_with_size = (part_page_data_file_path(id), offset);
@@ -2412,8 +2413,11 @@ async fn merge_range_partitioned_lookups(
             let modified_batch = add_offset_to_page_idx(&original_batch, num_pages_written)?;
             lookup_file.write_record_batch(modified_batch).await?;
         }
-        pages_per_file.push((part_id, lookup_reader.num_rows() as u32));
-        num_pages_written += lookup_reader.num_rows() as u32;
+        let num_rows = lookup_reader.num_rows() as u32;
+        if num_rows > 0 {
+            pages_per_file.push((part_id, num_rows));
+        }
+        num_pages_written += num_rows;
         progress
             .stage_progress("merge_lookups", idx as u64 + 1)
             .await?;
@@ -5272,5 +5276,89 @@ mod tests {
                 .unwrap();
             assert_eq!(expected, actual, "value {value}");
         }
+    }
+
+    #[tokio::test]
+    async fn test_range_partitioned_merge_with_empty_partition() {
+        let tmpdir = TempObjDir::default();
+        let store = Arc::new(LanceIndexStore::new(
+            Arc::new(ObjectStore::local()),
+            tmpdir.clone(),
+            Arc::new(LanceCache::no_cache()),
+        ));
+
+        let batch_size = DEFAULT_BTREE_BATCH_SIZE;
+
+        // Partition 0: has data
+        let part0 = gen_batch()
+            .col("value", array::step::<Int32Type>())
+            .col("_rowid", array::step::<UInt64Type>())
+            .into_df_stream(RowCount::from(batch_size), BatchCount::from(1));
+        train_btree_index(part0, store.as_ref(), batch_size, None, Some(0u32))
+            .await
+            .unwrap();
+
+        // Partition 1: empty (0 rows) — train_btree_index still creates files
+        let schema = Arc::new(arrow_schema::Schema::new(vec![
+            arrow_schema::Field::new("value", arrow::datatypes::DataType::Int32, true),
+            arrow_schema::Field::new("_rowid", arrow::datatypes::DataType::UInt64, false),
+        ]));
+        let empty_stream = Box::pin(RecordBatchStreamAdapter::new(
+            schema,
+            futures::stream::empty(),
+        ));
+        train_btree_index(empty_stream, store.as_ref(), batch_size, None, Some(1u32))
+            .await
+            .unwrap();
+
+        // Partition 2: has data
+        let values: Vec<i32> = (batch_size as i32..2 * batch_size as i32).collect();
+        let row_ids: Vec<u64> = (batch_size..2 * batch_size).collect();
+        let part2 = gen_batch()
+            .col("value", array::cycle::<Int32Type>(values))
+            .col("_rowid", array::cycle::<UInt64Type>(row_ids))
+            .into_df_stream(RowCount::from(batch_size), BatchCount::from(1));
+        train_btree_index(part2, store.as_ref(), batch_size, None, Some(2u32))
+            .await
+            .unwrap();
+
+        // Merge should succeed even though partition 1 is empty
+        super::merge_metadata_files(
+            store.as_ref(),
+            &[
+                part_page_data_file_path(0 << 32),
+                part_page_data_file_path(1 << 32),
+                part_page_data_file_path(2 << 32),
+            ],
+            &[
+                part_lookup_file_path(0 << 32),
+                part_lookup_file_path(1 << 32),
+                part_lookup_file_path(2 << 32),
+            ],
+            Some(1usize),
+            noop_progress(),
+        )
+        .await
+        .unwrap();
+
+        let index = BTreeIndex::load(store.clone(), None, &LanceCache::no_cache())
+            .await
+            .unwrap();
+        assert!(index.ranges_to_files.is_some());
+
+        // Search should work correctly — partition 1 is skipped
+        let query = SargableQuery::Equals(ScalarValue::Int32(Some(0)));
+        let result = index.search(&query, &NoOpMetricsCollector).await.unwrap();
+        assert!(
+            !result.row_addrs().is_empty(),
+            "should find value 0 in partition 0"
+        );
+
+        let query = SargableQuery::Equals(ScalarValue::Int32(Some(batch_size as i32)));
+        let result = index.search(&query, &NoOpMetricsCollector).await.unwrap();
+        assert!(
+            !result.row_addrs().is_empty(),
+            "should find value in partition 2"
+        );
     }
 }
